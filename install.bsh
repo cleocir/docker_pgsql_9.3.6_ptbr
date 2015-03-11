@@ -37,8 +37,8 @@ else
 fi
 POSTGRES_UID=$(id -u postgres)
 POSTGRES_GID=$(id -g postgres)
-if [ "$POSTGRES_UID" = "" ]; then echo "FALHA RECUPERANDO UID... INSTALAÇÃO ABORTADA!" ; exit 1 ; fi
-if [ "$POSTGRES_GID" = "" ]; then echo "FALHA RECUPERANDO GID... INSTALAÇÃO ABORTADA!" ; exit 1 ; fi
+if [ "$POSTGRES_UID" = "" ]; then echo "FALHA RECUPERANDO UID DO POSTGRES... INSTALAÇÃO ABORTADA!" ; exit 1 ; fi
+if [ "$POSTGRES_GID" = "" ]; then echo "FALHA RECUPERANDO GID DO POSTGRES... INSTALAÇÃO ABORTADA!" ; exit 1 ; fi
 
 # checa se existe uma configuracao antiga
 if [ -f $SP/config.run ]; then _STORAGE=$(grep "^LOCAL_STORAGE" $SP/config.run | cut -d "=" -f 2) ; else _STORAGE="$SP/pgdata-9.3/" ; fi
