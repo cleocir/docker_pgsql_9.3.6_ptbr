@@ -1,2 +1,2 @@
 DOCKER_REMOTE_CONTAINER=cleocir/pgsql_9.3.6_ptbr
-DOCKER_LOCAL_IMAGE_NAME=cleocir_pgsql936_ptbr
+DOCKER_LOCAL_IMAGE_NAME=cleocir_pgsql_936_ptbr
