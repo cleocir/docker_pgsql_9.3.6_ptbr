@@ -1,0 +1,152 @@
+#!/bin/bash
+
+# verifica se o interpretador usado é o bash
+if [ -z "${BASH}" ]; then
+   echo "ESTE SCRIPT SÓ FUNCIONA CORRETAMENTE SE EXECUTADO COM O INTERPRETADOR BASH."
+   echo "USE APENAS: ./install.bsh" 
+   echo "ABORTADO!"
+   exit 1
+fi
+
+# begin
+sudo echo "Iniciando instalação..."
+sleep 1
+
+# checa local do script 
+DIRNAME=`dirname $0`
+if [[ ${DIRNAME:0:1} == "/" ]] ; then SP=$DIRNAME ; else if [[ ${DIRNAME:0:1} == "." ]] ; then SP=`pwd` ; else SP=`pwd`""/$(dirname $0
+) ; fi ; fi
+
+# checa se o docker esta instalado 
+echo "Checando instalação do docker... "
+sleep 1
+if [ ! -f "/usr/bin/docker" ]; then
+   echo "........ NÃO ENCONTRADO... instale o DOCKER.IO e tente novamente!"
+   exit 1 
+fi
+
+# checa/cria usuario postgres no host
+echo -n "Verificando se o usuário postgres já existe no host..."
+sleep 1
+if id -u postgres >/dev/null 2>&1; then
+   echo " SIM... lendo UID/GID..."
+else
+   echo " NÃO... criando usuário e grupo postgres no host..." 
+   sudo groupadd -g 432 postgres 
+   sudo useradd -u 432 postgres -g postgres 
+fi
+POSTGRES_UID=$(id -u postgres)
+POSTGRES_GID=$(id -g postgres)
+if [ "$POSTGRES_UID" = "" ]; then echo "FALHA RECUPERANDO UID... INSTALAÇÃO ABORTADA!" ; exit 1 ; fi
+if [ "$POSTGRES_GID" = "" ]; then echo "FALHA RECUPERANDO GID... INSTALAÇÃO ABORTADA!" ; exit 1 ; fi
+
+# checa se existe uma configuracao antiga
+if [ -f $SP/config.run ]; then _STORAGE=$(grep "^LOCAL_STORAGE" $SP/config.run | cut -d "=" -f 2) ; else _STORAGE="$SP/pgdata-9.3/" ; fi
+
+# solicita/seta pasta de armazenamento dos dados do postgres 
+read -p "Pasta para os dados postgres ($_STORAGE): " STORAGE
+if [ "$STORAGE" = "" ]; then STORAGE="$_STORAGE" ; fi
+if [ "$(dirname $STORAGE)" = "." ]; then STORAGE="$SP/$STORAGE/" ; fi
+if [ ! "$(echo $STORAGE | sed -e "s/^.*\(.\)$/\1/")" = "/" ]; then STORAGE=$STORAGE"/" ; fi
+
+# checa/cria pasta de armazenamento dos dados do postgres 
+if [ ! -d $STORAGE ]; then
+   read -p "A pasta "$STORAGE" não existe. CRIAR AGORA? [s/n]? " READ
+   if [ "$READ" = "s" ]; then
+      sudo mkdir -p $STORAGE
+   else
+      echo "PASTA NÃO ENCONTRADA... INSTALAÇÃO ABORTADA!"
+      exit 1
+   fi
+fi
+
+# seta as permissoes da pasta de armazenamento para o postgres 
+echo "Setando as permissões da pasta "$STORAGE"..."
+sudo chown -R postgres.postgres $STORAGE
+wait
+
+# pega configuracao do container 
+echo "Verificando parâmetros no arquivo de configuração da instalação..."
+DOCKER_IMAGE=$(grep "^DOCKER_REMOTE_CONTAINER" $SP/config.install | cut -d "=" -f 2)
+DOCKER_NAME=$(grep "^DOCKER_LOCAL_IMAGE_NAME" $SP/config.install | cut -d "=" -f 2)
+wait
+
+# baixa a imagem do container do repositorio docker 
+echo "Preparando para baixar o container do repositório docker..."
+sleep 2
+sudo docker pull $DOCKER_IMAGE
+
+# seta o uid/gid do postgres do container igual ao host
+echo "Setando o uid/gid do postgres do container igual ao host..."
+sudo docker rm -f $DOCKER_NAME >/dev/null 2>&1
+sudo docker run --name=$DOCKER_NAME -t -i $DOCKER_IMAGE \
+            /bin/bash -c 'userdel postgres && groupadd -g '$POSTGRES_GID' postgres && useradd -u '$POSTGRES_UID' postgres -g postgres' 
+wait
+newHash=$(sudo docker inspect $DOCKER_NAME | grep "Hostname\"" | cut -d "\"" -f 4)
+sudo docker commit $newHash $DOCKER_IMAGE
+
+# seta a chave ssh publica do root/host para o container permitir acesso sem senha via ssh
+echo "Criando/adicionando a chave ssh do root do host para o container permitir o acesso via ssh..."
+if sudo test ! -f "/root/.ssh/id_rsa.pub"; then sudo ssh-keygen -t rsa -f "/root/.ssh/id_rsa" -N "" ; fi
+PUBKEY=$(sudo -u root cat /root/.ssh/id_rsa.pub)
+sudo docker rm -f $DOCKER_NAME >/dev/null 2>&1
+sudo docker run --name=$DOCKER_NAME -t -i $DOCKER_IMAGE \
+            /bin/bash -c 'echo '"$PUBKEY"' | sudo tee -a /root/.ssh/authorized_keys' 
+wait
+newHash=$(sudo docker inspect $DOCKER_NAME | grep "Hostname\"" | cut -d "\"" -f 4)
+sudo docker commit $newHash $DOCKER_IMAGE
+
+# verifica se a pasta de armazenamento ja possui dados 
+if sudo test ! -d $STORAGE"base/"; then
+   echo "Criando estrutura na pasta "$STORAGE"..."
+   read -p "Informe uma senha inicial para o super-usuário postgres: " SUPER_PSW
+   if [ "$SUPER_PSW" = "" ]; then echo "SENHA NÃO INFORMADA... INSTALAÇÃO ABORTADA!" ; exit 1 ; fi
+   read -p "Por segurança, você deve criar mais um super-usuário para o banco de dados (informe um novo login): " NEW_SUPER_USR
+   if [ "$NEW_SUPER_USR" = "" ]; then
+      echo "NOVO SUPER-USUÁRIO NÃO INFORMADO... INSTALAÇÃO ABORTADA!" ; exit 1 ; 
+   else
+      read -p "Senha para o novo super-usuário $NEW_SUPER_USR: " NEW_SUPER_PSW
+      if [ "$NEW_SUPER_PSW" = "" ]; then echo "SENHA NÃO INFORMADA... INSTALAÇÃO ABORTADA!" ; exit 1 ; fi
+   fi
+   # cria e seta nova estrutura de dados 
+   sudo docker rm -f $DOCKER_NAME >/dev/null 2>&1
+   sudo docker run --name=$DOCKER_NAME -v=$STORAGE:"/STORAGE/pgdata-9.3/" -t -i $DOCKER_IMAGE \
+               /bin/bash -c 'sudo -u postgres /usr/local/pgsql/bin/initdb --locale=pt_BR.UTF-8 -E UTF-8 -D /STORAGE/pgdata-9.3/ &&
+               /etc/init.d/postgresql start && echo "Por favor aguarde o ajuste dos usuários..." && sleep 5 &&
+               /usr/local/pgsql/bin/psql -U postgres -c "alter user postgres with encrypted password '\'$SUPER_PSW\'';" &&
+               /usr/local/pgsql/bin/createuser -U postgres -a -d -r -E -s '$NEW_SUPER_USR' &&
+               /usr/local/pgsql/bin/psql -U postgres -c "alter user '$NEW_SUPER_USR' with encrypted password '\'$NEW_SUPER_PSW\'';"' 
+   # ajusta arquivos de configuração do postgres
+   echo "Ajustando configurações do postgresql..."
+   sudo -u postgres sed -i "/^#listen_addresses/i listen_addresses='*'" $STORAGE"postgresql.conf"
+   echo "# DOCKER AUTO-CONFIG" | sudo tee -a $STORAGE"pg_hba.conf" 
+   echo "host   all     all     0.0.0.0/0       md5" | sudo tee -a $STORAGE"pg_hba.conf" 
+fi
+
+# cria arquivo configuracao para rodar o container
+if [ -f $SP/config.run ]; then sudo rm -f $SP/config.run ; fi 
+touch $SP/config.run
+echo "LOCAL_PGSQL_PORT=5432" >> $SP/config.run
+echo "LOCAL_SSH_PORT=54322" >> $SP/config.run
+echo "LOCAL_STORAGE=$STORAGE" >> $SP/config.run
+echo "LOCAL_IMAGE_NAME=$DOCKER_NAME" >> $SP/config.run
+echo "LOCAL_IMAGE=$DOCKER_IMAGE" >> $SP/config.run
+echo "MEMORY_LIMIT=1024m" >> $SP/config.run
+ 
+# cria o script para rodar o container
+if [ -f $SP/run.bsh ]; then sudo rm -f $SP/run.sh ; fi
+touch $SP/run.bsh
+echo "#!/bin/bash" >> $SP/run.bsh
+echo "DIRNAME=\`dirname \$0\` ; if [[ \${DIRNAME:0:1} == "\"/"\" ]] ; then SP=\$DIRNAME ; else if [[ \${DIRNAME:0:1} == "\"."\" ]] ; then SP=\`pwd\` ; else SP=\`pwd\`"\""\"/\$(dirname \$0) ; fi ; fi" >> $SP/run.bsh
+echo ". \$SP/config.run" >> $SP/run.bsh
+echo "docker rm -f \$LOCAL_IMAGE_NAME >/dev/null 2>&1" >> $SP/run.bsh
+echo "docker run -d --memory=\$MEMORY_LIMIT --name=\$LOCAL_IMAGE_NAME -p \$LOCAL_PGSQL_PORT:5432 -p \$LOCAL_SSH_PORT:22 -v=\$LOCAL_STORAGE:"/STORAGE/pgdata-9.3/" -i \$LOCAL_IMAGE /start >/dev/null 2>&1" >> $SP/run.bsh
+echo "docker ps | grep \$LOCAL_IMAGE_NAME" >> $SP/run.bsh
+chmod +x $SP/run.bsh
+
+# fim 
+echo -e "\n\nINSTALAÇÃO FINALIZADA COM SUCESSO!"
+echo -e "\n\nAbaixo o comando para executar o seu novo container."
+echo -e "Se preferir coloque o mesmo na inicialização do sistema.\n\n"
+echo "$SP/run.bsh"
+echo -e "\n\n"
