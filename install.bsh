@@ -112,13 +112,13 @@ if sudo test ! -d $STORAGE"base/"; then
    sudo docker rm -f $DOCKER_NAME >/dev/null 2>&1
    sudo docker run --name=$DOCKER_NAME -v=$STORAGE:"/STORAGE/pgdata-9.3/" -t -i $DOCKER_IMAGE \
                /bin/bash -c 'sudo -u postgres /usr/local/pgsql/bin/initdb --locale=pt_BR.UTF-8 -E UTF-8 -D /STORAGE/pgdata-9.3/ &&
-               /etc/init.d/postgresql start && echo "Por favor aguarde o ajuste dos usuários..." && sleep 5 &&
+               /etc/init.d/postgresql-9.3 start && echo "Por favor aguarde o ajuste dos usuários..." && sleep 5 &&
                /usr/local/pgsql/bin/psql -U postgres -c "alter user postgres with encrypted password '\'$SUPER_PSW\'';" &&
                /usr/local/pgsql/bin/createuser -U postgres -a -d -r -E -s '$NEW_SUPER_USR' &&
                /usr/local/pgsql/bin/psql -U postgres -c "alter user '$NEW_SUPER_USR' with encrypted password '\'$NEW_SUPER_PSW\'';"' 
    # ajusta arquivos de configuração do postgres
    echo "Ajustando configurações do postgresql..."
-   sudo -u postgres sed -i "/^#listen_addresses/i listen_addresses='*'" $STORAGE"postgresql.conf"
+   sudo sed -i "/^#listen_addresses/i listen_addresses='*'" $STORAGE"postgresql.conf"
    echo "# DOCKER AUTO-CONFIG" | sudo tee -a $STORAGE"pg_hba.conf" 
    echo "host   all     all     0.0.0.0/0       md5" | sudo tee -a $STORAGE"pg_hba.conf" 
 fi
