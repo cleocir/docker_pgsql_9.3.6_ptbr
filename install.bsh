@@ -139,8 +139,7 @@ touch $SP/run.bsh
 echo "#!/bin/bash" >> $SP/run.bsh
 echo "DIRNAME=\`dirname \$0\` ; if [[ \${DIRNAME:0:1} == "\"/"\" ]] ; then SP=\$DIRNAME ; else if [[ \${DIRNAME:0:1} == "\"."\" ]] ; then SP=\`pwd\` ; else SP=\`pwd\`"\""\"/\$(dirname \$0) ; fi ; fi" >> $SP/run.bsh
 echo ". \$SP/config.run" >> $SP/run.bsh
-echo "docker rm -f \$LOCAL_IMAGE_NAME >/dev/null 2>&1" >> $SP/run.bsh
-echo "docker run -d --memory=\$MEMORY_LIMIT --name=\$LOCAL_IMAGE_NAME -p \$LOCAL_PGSQL_PORT:5432 -p \$LOCAL_SSH_PORT:22 -v=\$LOCAL_STORAGE:"/STORAGE/pgdata-9.3/" -i \$LOCAL_IMAGE /start >/dev/null 2>&1" >> $SP/run.bsh
+echo "docker run -d --rm --memory=\$MEMORY_LIMIT --name=\$LOCAL_IMAGE_NAME -p \$LOCAL_PGSQL_PORT:5432 -p \$LOCAL_SSH_PORT:22 -v=\$LOCAL_STORAGE:"/STORAGE/pgdata-9.3/" -i \$LOCAL_IMAGE /start >/dev/null 2>&1" >> $SP/run.bsh
 echo "docker ps | grep \$LOCAL_IMAGE_NAME" >> $SP/run.bsh
 chmod +x $SP/run.bsh
 
