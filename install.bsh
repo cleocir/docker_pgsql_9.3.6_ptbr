@@ -74,7 +74,10 @@ wait
 # baixa a imagem do container do repositorio docker 
 echo "Preparando para baixar o container do repositório docker..."
 sleep 2
+sudo docker stop $DOCKER_NAME 
+wait
 sudo docker pull $DOCKER_IMAGE
+wait
 
 # seta o uid/gid do postgres do container igual ao host
 echo "Setando o uid/gid do postgres do container igual ao host..."
